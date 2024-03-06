@@ -40,8 +40,8 @@ class objectiveFcn:
         elif self.dim != x.size:
             raise ValueError(f'x is not the right size, is {x.size}, expecting {self.dim}')
         return fx
-    def directionalDerivative(self,x,p, return_fx = False ):
-        deriv, fx = DFO_utilities.directionalDerivative(x,p,self.eval)
+    def directionalDerivative(self,x,p, return_fx = False, centeredDifferences=False):
+        deriv, fx = DFO_utilities.directionalDerivative(x,p,self.eval,centeredDifferences=centeredDifferences)
         deriv = self.vec(deriv)
         if return_fx:
             return deriv, fx
@@ -99,6 +99,24 @@ class calibrateFcn:
             x = x.reshape(1, -1)
         _, hf_mean = bf_linear_gp_prediction(self.model, x)
         return hf_mean.flatten()
+    
+class bfFcn1D:
+    """Function class representing the 1D bi-fidelity function after 
+    the provided HF evaluation"""
+    def __init__(self,
+                 hf_pos: np.ndarray, # 1D position
+                 hf_fcn: np.ndarray,
+                 lf_pos: np.ndarray, # 1D position
+                 lf_fcn: np.ndarray):
+        model = bf_linear_gp_regression(lf_pos.reshape(-1, 1), lf_fcn.reshape(-1, 1), 
+                                        hf_pos.reshape(-1, 1), hf_fcn.reshape(-1, 1))
+        self.model = model
+    
+    def forward(self, x: np.ndarray):
+        if x.ndim == 1:
+            x = x.reshape(1, -1)
+        _, hf_mean = bf_linear_gp_prediction(self.model, x)
+        return hf_mean.flatten()
 
 def grad_desc(x0: np.ndarray,
               obj: objectiveFcn,
@@ -116,8 +134,7 @@ def grad_desc(x0: np.ndarray,
             print('Found NaN')
             return x
         x -= learning_rate*gradx
-        if not np.mod(i,int(printEvery)):
-            print(f'Iter {i:3d}, f(x) is {fx:g}')
+
     return x
 
 
@@ -140,8 +157,6 @@ def coor_desc(x0: np.ndarray,
             gradx,fx = obj.directionalDerivative(x, U, return_fx=True)
             p = U @ gradx  # projected gradient
             x -= learning_rate*p
-            if not np.mod(i,int(printEvery)):
-                print(f'Iter {i:3d}, f(x) is {fx:g}')
         
     return x
 
@@ -163,8 +178,30 @@ def ssd(x0: np.ndarray,
         gradx,fx = obj.directionalDerivative(x, U, return_fx=True)
         p = U @ gradx  # projected gradient
         x -= learning_rate*p
-        if not np.mod(i,int(printEvery)):
-            print(f'Iter {i:3d}, f(x) is {fx:g}')
+        
+    return x
+
+def spsa(x0: np.ndarray,
+        obj: objectiveFcn,
+        alpha: Optional[float] = 0.602,
+        gamma: Optional[float] = 0.101,
+        c: Optional[float] = 1e-2,
+        num_iterations: Optional[int] = 1e2, 
+        printEvery: Optional[int] = None,) -> np.ndarray:
+    """ Simutanous Perturbation Stochastic Approximation of Spall"""
+    x = as_column_vec(x0,copy=True)
+    n = x.shape[0]
+    A, a = 0.1 * num_iterations, 0.16
+    if printEvery is None: printEvery = int( num_iterations / 10 )
+    obj.reset()
+    print('======== SPSA ===================')
+    for k in range(int(num_iterations)):
+        a_k = a/(A+k+1)**alpha
+        c_k = c/(k+1)**gamma
+        # Standard SSO
+        u = (2 * np.random.binomial(1, 0.5, n) - 1).reshape(-1,1)
+        p = np.asarray((obj.eval(x+c_k*u) - obj.eval(x-c_k*u))/(2*c_k) * u)
+        x -= a_k * p
         
     return x
 
@@ -175,8 +212,7 @@ def ssd_ls(x0: np.ndarray,
            num_iterations: Optional[int] = 1e2, 
            printEvery: Optional[int] = None,
            ell: Optional[int] = 1,
-           linesearchIter: Optional[int] = 20,
-           calibrated: Optional[bool] = False) -> np.ndarray:
+           linesearchIter: Optional[int] = 20) -> np.ndarray:
     """ Stochastic Substace Descent with low-fidelity model for linesearch """
     x = as_column_vec(x0,copy=True)
     n = x.shape[0]
@@ -184,40 +220,126 @@ def ssd_ls(x0: np.ndarray,
     obj.reset()
     if obj_lowFi is not None:
         obj_lowFi.reset()
-        learning_rate_original = learning_rate
     else:
         raise ValueError("Must provide low-fidelity model")
-    if calibrated:
-        print('======== SSD w/ calibrated bi-fi linesearch =')
-    else:
-        print('======== SSD w/ low-fi linesearch =')
+
+    print('======== SSD w/ low-fi linesearch =')
     # Evaluate high- and low-fidelity models at random points to calibrate
     x_init = np.random.rand(5, n)
     for x_init_i in x_init:
         obj.eval(x_init_i)
         obj_lowFi.eval(x_init_i)
-    caliModel = calibrateFcn(obj, obj_lowFi)
     for i in range(int(num_iterations)):
         U = DFO_utilities.haar_QR(n,ell,ignoreDiagScaling=True,transpose=False)
-        gradx, fx = obj.directionalDerivative(x, U, return_fx=True)
+        gradx = obj.directionalDerivative(x, U)
         p = U @ gradx  # projected gradient
-        step_sizes = learning_rate_original * np.logspace(-2,2,num=linesearchIter) # one way to do it
+        step_sizes = learning_rate * np.logspace(-2,2,num=linesearchIter) # one way to do it
         # step_sizes = learning_rate * np.logspace(-2,2,num=linesearchIter) # another way to do it, but often then gets stuck at tiny steps
-        if calibrated:
-            cand_x = []
-            for step_size in step_sizes:
-                x_new = x.ravel() - step_size * p.ravel()
-                cand_x.append(x_new)
-                _ = obj_lowFi.eval(x_new)
-            caliModel.update()
-            fVals = caliModel.eval(np.asarray(cand_x))
-        else:
-            fVals = [obj_lowFi.eval(x.ravel() - step_size * p.ravel() ) for step_size in step_sizes]
+        # if calibrated:
+        #     cand_x = []
+        #     for step_size in step_sizes:
+        #         x_new = x.ravel() - step_size * p.ravel()
+        #         cand_x.append(x_new)
+        #         _ = obj_lowFi.eval(x_new)
+        #     caliModel.update()
+        #     fVals = caliModel.eval(np.asarray(cand_x))
+        # else:
+        fVals = [obj_lowFi.eval(x.ravel() - step_size * p.ravel() ) for step_size in step_sizes]
         # fVals = [obj_lowFi.eval(x.ravel() - step_size * p.ravel() ) for step_size in step_sizes]
         learning_rate =  step_sizes[np.argmin(fVals)]
 
         x -= learning_rate * p
-        if not np.mod(i,int(printEvery)):
-            print(f'Iter {i:3d}, f(x) is {fx:g}')
+
+        
+    return x
+
+def ssd_bt(x0: np.ndarray, 
+           obj: objectiveFcn,
+           obj_lowFi: objectiveFcn = None,
+           num_iterations: Optional[int] = 1e2, 
+           printEvery: Optional[int] = None,
+           ell: Optional[int] = 1,
+           linesearchIter: Optional[int] = 20,
+           beta: Optional[float] = None,
+           c: Optional[float] = 0.9,
+           L0: Optional[float] = 1.0) -> np.ndarray:
+    """ Stochastic Substace Descent with low-fidelity model for linesearch """
+    x = as_column_vec(x0,copy=True)
+    n = x.shape[0]
+    ell -= 1
+    if printEvery is None: printEvery = int( num_iterations / 10 )
+    if beta is None: beta = 0.5 * ell / n
+    obj.reset()
+    if obj_lowFi is not None:
+        obj_lowFi.reset()
+    else:
+        raise ValueError("Must provide low-fidelity model")
+    print('======== SSD w/ backtracking bi-fi linesearch =')
+    for i in range(int(num_iterations)):
+        U = DFO_utilities.haar_QR(n,ell,ignoreDiagScaling=True,transpose=False)
+        gradx, fx = obj.directionalDerivative(x, U, return_fx=True)
+        p = U @ gradx  # projected gradient
+        v = p/np.linalg.norm(p)
+        # Build surrogate
+        hf_L0 = obj.eval(x.ravel() + L0 * p.ravel())
+        lf_0, lf_L0 = obj_lowFi.eval(x.ravel()), obj_lowFi.eval(x.ravel() + L0 * v.ravel())
+        rho = hf_L0 / lf_L0
+        bi_func = lambda ss: rho * obj_lowFi.eval(x.ravel()+ss*v.ravel()) +\
+              (hf_L0 - rho * lf_L0 - fx + rho * lf_0)/L0 * ss + fx - rho * lf_0
+
+        step_sizes = [c**n*L0 for n in range(linesearchIter)]# one way to do it
+        fVals = [bi_func(ss) for ss in step_sizes]
+        learning_rate = step_sizes[-1]
+        for i, step_size in enumerate(step_sizes):
+            if fVals[i] < fx - beta * step_size * np.linalg.norm(p)**2 * ell/n:
+                learning_rate = step_size
+                break
+
+        x -= learning_rate * p
+
+        
+    return x
+
+def ssd_hbt(x0: np.ndarray, 
+           obj: objectiveFcn,
+           obj_lowFi: objectiveFcn = None,
+           num_iterations: Optional[int] = 1e2, 
+           printEvery: Optional[int] = None,
+           ell: Optional[int] = 1,
+           linesearchIter: Optional[int] = 20,
+           beta: Optional[float] = None,
+           c: Optional[float] = 0.9,
+           L0: Optional[float] = 1.0) -> np.ndarray:
+    """ Stochastic Substace Descent with low-fidelity model for linesearch """
+    x = as_column_vec(x0,copy=True)
+    n = x.shape[0]
+    ell -= 1
+    if printEvery is None: printEvery = int( num_iterations / 10 )
+    if beta is None: beta = 0.5 * ell / n
+    obj.reset()
+    if obj_lowFi is not None:
+        obj_lowFi.reset()
+    else:
+        raise ValueError("Must provide low-fidelity model")
+    print('======== SSD w/ backtracking linesearch =')
+    for i in range(int(num_iterations)):
+        U = DFO_utilities.haar_QR(n,ell,ignoreDiagScaling=True,transpose=False)
+        gradx, fx = obj.directionalDerivative(x, U, return_fx=True)
+        p = U @ gradx  # projected gradient
+        # start backtracking
+        new_fx = obj.eval(x.ravel() + L0 * p.ravel())
+        cnt = 0
+        ss = L0
+        while new_fx >= fx - beta * ss * np.linalg.norm(p)**2 * ell/n:
+            ss *= c
+            new_fx = obj.eval(x.ravel() + ss * p.ravel())
+            cnt += 1
+            if cnt > linesearchIter:
+                break
+        learning_rate = ss 
+
+        x -= learning_rate * p
+        # if not np.mod(i,int(printEvery)):
+        #     print(f'Iter {i:3d}, f(x) is {fx:g}')
         
     return x
