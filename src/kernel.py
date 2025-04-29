@@ -1,15 +1,25 @@
 
 import sys
-from pathlib import Path
+import os
 
-# Add the parent directory to sys.path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Get the absolute path of the directory containing the notebook
+# This assumes your notebook's current working directory IS the 'notebook' folder
+notebook_dir = os.getcwd() # Or specify the absolute path if needed
 
+# Get the absolute path of the parent directory ('your_project_root')
+parent_dir = os.path.dirname(notebook_dir)
+# Or use: parent_dir = os.path.abspath(os.path.join(notebook_dir, '..'))
+
+# Add the parent directory to sys.path if it's not already there
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+# Option A: Import specific functions
+from util.OPT_utilities import objectiveFcn, grad_desc, coor_desc, ssd, ssd_bt_temp, ssd_hbt, ssd_sag, spsa
 import numpy as np
 from sklearn.kernel_approximation import Nystroem
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.datasets import fetch_california_housing
-from wrapper import *
 from numpy.linalg import norm
 # FIX RANDOM SEED
 np.random.seed(0)
@@ -99,7 +109,7 @@ def main():
     obj_alt = objectiveFcn(f_HF,label='kernel-alt')
 
     # Run methods
-    methods = ['gd', 'cd', 'ssd', 'spsa', 'rgfm', 'ssd_lf', 'ssd_hf',
+    methods = ['gd', 'cd', 'ssd', 'spsa', 'rgfm', 'ssd_hf',
             'ssd_bf', 'ssd_oracle', 'ssd_sag']
 
     res = {m: [] for m in methods}
@@ -119,13 +129,6 @@ def main():
         # Random Gredien-free Minimization
         _ = ssd(x0,obj,ell=1,learning_rate=learning_rate_ssd,num_iterations=num_iterations*d)
         res['rgfm'].append(obj.returnHistory())
-        # SSD with linesearch (LF)
-        _ = ssd_ls(x0,obj,ell=ell,learning_rate=learning_rate_ssd, obj_lowFi= obj_lowFi,
-                    num_iterations=num_iterations*d/ell, linesearch_iter=linesearch_iter )
-        res['ssd_lf'].append(obj.returnHistory())
-        # SSD with linesearch (HF)
-        _ = ssd_ls(x0,obj,ell=ell,learning_rate=learning_rate_ssd, obj_lowFi= obj_alt,
-                    num_iterations=num_iterations*d/ell, linesearch_iter=linesearch_iter )
         res['ssd_oracle'].append(obj.returnHistory())
         # SSD with backtracking linesearch (BF)
         _ = ssd_bt_temp(x0,obj,ell=ell,obj_lowFi= obj_lowFi, c=c,num_iterations=num_iterations*d/ell,
@@ -147,10 +150,12 @@ def main():
 
     bf_ratio = linesearch_iter * lr / ((ell + 1) * d)
 
-    save_path = f'results/kernel/kernel-d{d}-lr{lr}-L0{L0}-tau{tau}-ell{ell}-c{c}.npz'
+    save_path = f'../results/kernel/kernel-d{d}-lr{lr}-L0{L0}-tau{tau}-ell{ell}-c{c}.npz'
     print(f'Saved results to {save_path}')
     np.savez(save_path, res=res, bf_ratio=bf_ratio)
     print('Done!')
     
 if __name__ == '__main__':
+    if not os.path.exists('../results/kernel'):
+        os.makedirs('../results/kernel')
     main()

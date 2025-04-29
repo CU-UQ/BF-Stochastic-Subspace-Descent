@@ -1,11 +1,20 @@
-
 import sys
-from pathlib import Path
+import os
 
-# Add the parent directory to sys.path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+# Get the absolute path of the directory containing the notebook
+# This assumes your notebook's current working directory IS the 'notebook' folder
+notebook_dir = os.getcwd() # Or specify the absolute path if needed
 
-from wrapper import *
+# Get the absolute path of the parent directory ('your_project_root')
+parent_dir = os.path.dirname(notebook_dir)
+# Or use: parent_dir = os.path.abspath(os.path.join(notebook_dir, '..'))
+
+# Add the parent directory to sys.path if it's not already there
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+# Option A: Import specific functions
+from util.OPT_utilities import objectiveFcn, grad_desc, coor_desc, ssd, ssd_ls_temp, ssd_bt_temp, ssd_hbt, ssd_sag, spsa
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -120,10 +129,12 @@ def main():
         res[k] = truncate_to_matrix(v)
     bf_ratio = linesearch_iter * r2 / ((ell + 1) * r1)
 
-    save_path = f'results/worst/worst-d{d}-rH{r1}-rL{r2}-lmda{lmda}-ell{ell}-c{c}.npz'
+    save_path = f'../results/worst/worst-d{d}-rH{r1}-rL{r2}-lmda{lmda}-ell{ell}-c{c}.npz'
     print(f'Saved results to {save_path}')
     np.savez(save_path, res=res, bf_ratio=bf_ratio)
     print('Done!')
     
 if __name__ == '__main__':
+    if not os.path.exists('../results/worst'):
+        os.makedirs('../results/worst')
     main()
