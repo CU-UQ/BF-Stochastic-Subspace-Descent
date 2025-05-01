@@ -13,10 +13,10 @@ The repository is organized as follows:
 .
 ├── reproduce.ipynb         # Jupyter Notebook to reproduce main results/figures from the paper.
 ├── src/                    # Scripts for individual test cases/experiments.
-│   ├── worst.py            # Code for Test Case 4.1 (e.g., Worst-case function optimization).
-│   ├── kernel.py           # Code for Test Case 4.2.1 (e.g., Kernel ridge regression).
-│   ├── adversarial.py      # Code for Test Case 4.2.2 (e.g., Adversarial attack example).
-│   └── soft_prompting.py   # Code for Test Case 4.2.3 (e.g., BERT soft prompting example).
+│   ├── worst.py            # Code for Section 4.1 (e.g., Worst-case function optimization).
+│   ├── kernel.py           # Code for Section 4.2.1 (e.g., Kernel ridge regression).
+│   ├── adversarial.py      # Code for Section 4.2.2 (e.g., Adversarial attack example).
+│   └── soft_prompting.py   # Code for Section 4.2.3 (e.g., BERT soft prompting example).
 ├── util/                   # Core implementation of optimization methods.
 │   ├── DFO_utilities.py    # Utilities for implementing the  SSD methods.
 │   └── OPT_utilities.py    # Utilities for competing/baseline optimization methods used in the paper.
@@ -35,10 +35,10 @@ The repository is organized as follows:
 The Python scripts within the `src/` directory correspond to the specific test cases discussed in the paper. You can typically run these scripts directly to generate the optimization results for each scenario:
 
 ```bash
-python src/worst.py       # Run Test Case 1
-python src/kernel.py      # Run Test Case 2
-python src/adversarial.py # Run Test Case 3
-python src/soft_prompting.py # Run Test Case 4
+python src/worst.py       # Run worst function in the world
+python src/kernel.py      # Run dual form kernel ridge regression
+python src/adversarial.py # Run black box adversarial attack
+python src/soft_prompting.py # Run black box language model fine tuning
 ```
 
 These scripts will likely perform the optimization runs using methods defined in `util/` and may save detailed logs or raw numerical results into the `results/` directory. Check the individual scripts for specific command-line arguments or configurations they might accept.
