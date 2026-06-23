@@ -521,7 +521,7 @@ def ssd_bt_temp_HermiteInterp(x0: np.ndarray,
         # -- New Hermite interpolation --
         hf_deriv = np.linalg.norm(p)**2 # derivative of the 1D function at ss=0
         gradx_lf, lf_0 = obj_lowFi.directionalDerivative(x.ravel(), U, return_fx=True)
-        lf_deriv = np.dot( gradx_lf, gradx ) # derivative of the 1D function at ss=0
+        lf_deriv = np.vdot( gradx_lf, gradx ) # derivative of the 1D function at ss=0
         rho = hf_deriv / lf_deriv
         bi_func = lambda ss: rho * obj_lowFi.eval(x.ravel()+ss*v.ravel()) + fx - lf_0
 
