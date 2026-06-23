@@ -520,8 +520,13 @@ def ssd_bt_temp_HermiteInterp(x0: np.ndarray,
         # lf_0, lf_L0 = obj_lowFi.eval(x.ravel()), obj_lowFi.eval(x.ravel() + L0 * v.ravel())
         # -- New Hermite interpolation --
         hf_deriv = np.linalg.norm(p)**2 # derivative of the 1D function at ss=0
-        gradx_lf, lf_0 = obj_lowFi.directionalDerivative(x.ravel(), U, return_fx=True)
-        lf_deriv = np.vdot( gradx_lf, gradx ) # derivative of the 1D function at ss=0
+        # gradx_lf, lf_0 = obj_lowFi.directionalDerivative(x.ravel(), U, return_fx=True)
+        # lf_deriv = np.vdot( gradx_lf, gradx ) # derivative of the 1D function at ss=0
+        # Or, cheaper:
+        h = 1e-8
+        lf_0, lf_h = obj_lowFi.eval(x.ravel()), obj_lowFi.eval(x.ravel() + h * v.ravel())
+        lf_deriv = (lf_h - lf_0)/h # forward differences
+        # and do the calibration to create the surrogate:
         rho = hf_deriv / lf_deriv
         bi_func = lambda ss: rho * obj_lowFi.eval(x.ravel()+ss*v.ravel()) + fx - lf_0
 
