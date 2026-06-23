@@ -158,7 +158,7 @@ def ArmijoBackgrackingLinesearch(x0,fcn,g,stepsize,fxOld=None,p=None,armijoConst
     Inputs: x0 (current point), fcn (functon), g (gradient), stepsize, 
     Optional: fxOld = f(x), p (direction, e.g., -g)
     Optional: armijoConstant, stepsizeFactor (between 0 and 1), maxlinesearchIters, stepmin
-    Returns: xNew, fxOld, stepsize, linesearchIters, flag \in {"max iters","too small","success"}
+    Returns: xNew, fxOld, stepsize, linesearchIters, flag in {"max iters","too small","success"}
     """
     linesearchIters = 0
     x = x0.copy()  # possibly unnecessary, but better safe than sorry. Do *not* want side effects!
