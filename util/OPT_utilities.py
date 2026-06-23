@@ -488,6 +488,56 @@ def ssd_bt_temp(x0: np.ndarray,
         
     return x
 
+def ssd_bt_temp_HermiteInterp(x0: np.ndarray, 
+           obj: objectiveFcn,
+           obj_lowFi: objectiveFcn = None,
+           num_iterations: Optional[int] = 1e2, 
+           printEvery: Optional[int] = None,
+           ell: Optional[int] = 1,
+           linesearch_iter: Optional[int] = 20,
+           beta: Optional[float] = None,
+           c: Optional[float] = 0.9,
+           L0: Optional[float] = 1.0) -> np.ndarray:
+    """ Stochastic Substace Descent with bi-fidelity model for linesearch, ver 2026 with Hermite interpolation """
+    x = as_column_vec(x0,copy=True)
+    n = x.shape[0]
+    ell -= 1
+    if printEvery is None: printEvery = int( num_iterations / 10 )
+    if beta is None: beta = 0.5 * ell / n
+    obj.reset()
+    if obj_lowFi is not None:
+        obj_lowFi.reset()
+    else:
+        raise ValueError("Must provide low-fidelity model")
+    print('======== SSD w/ backtracking bi-fi linesearch, 2026 variant with Hermite interpolation =')
+    for i in range(int(num_iterations)):
+        U = DFO_utilities.haar_QR(n,ell,ignoreDiagScaling=True,transpose=False)
+        gradx, fx = obj.directionalDerivative(x, U, return_fx=True)
+        p = U @ gradx  # projected gradient
+        v = p/np.linalg.norm(p)
+        # Build surrogate
+        # hf_L0 = obj.eval(x.ravel() + L0 * p.ravel()) # Not needed in this variant
+        # lf_0, lf_L0 = obj_lowFi.eval(x.ravel()), obj_lowFi.eval(x.ravel() + L0 * v.ravel())
+        # -- New Hermite interpolation --
+        hf_deriv = np.linalg.norm(p)**2 # derivative of the 1D function at ss=0
+        p_lf, lf_0 = obj_lowFi.directionalDerivative(x.ravel(), U, return_fx=True)
+        lf_deriv = np.linalg.dot( p_lf, p ) # derivative of the 1D function at ss=0
+        rho = hf_deriv / lf_deriv
+        bi_func = lambda ss: rho * obj_lowFi.eval(x.ravel()+ss*v.ravel()) + fx - lf_0
+
+        step_sizes = [c**n*L0 for n in range(linesearch_iter)]# one way to do it
+        fVals = [bi_func(ss) for ss in step_sizes]
+        learning_rate = step_sizes[-1]
+        for i, step_size in enumerate(step_sizes):
+            if fVals[i] < fx - beta * step_size * np.linalg.norm(p)**2 * ell/n:
+                learning_rate = step_size
+                break
+
+        x -= learning_rate * p
+
+        
+    return x
+
 def ssd_bt(
     x0: np.ndarray, 
     obj: objectiveFcn, 
